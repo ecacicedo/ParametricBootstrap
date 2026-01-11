@@ -51,3 +51,10 @@ plot(dens_boot, col="grey", main="Raw bootstrap density v Jeffrey's posterior co
 lines(dens_post, col="black")
 legend("topright", legend=c("Bootstrap","Jeffrey's posterior"),
        col=c("grey","black"), lty=1)
+
+
+raw_mean <- mean(boot_cor)
+raw_ci <- quantile(boot_cor, probs = c(0.025, 0.975))
+
+post_mean <- sum(w_norm * boot_cor)
+post_ci <- quantile(boot_cor, probs = c(0.025, 0.975), weights = w_norm)
