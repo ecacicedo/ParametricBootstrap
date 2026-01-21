@@ -26,37 +26,38 @@ for (b in 1:B) {
   sigma_boot[b] <- sqrt(sum(residuals(fit_star)^2) / n)
 }
 
-# Jeffreys prior
-log_prior <- function(beta, sigma) {
-  -log(sigma)
-}
+# Jeffrey's prior
+jeff_prior <- function(sigma) sigma^(-2)
 
 # Likelihood ratio term R(theta)
-logLik_theta <- function(beta, sigma, y) {
-  mu <- X %*% beta
-  -n * log(sigma) - sum((y - mu)^2) / (2 * sigma^2)
-}
 
-logR <- numeric(B)
+R <- numeric(B)
+
+mu_boot = X %*% beta_boot[b, ]
+mu_hat = X %*% beta_hat
 
 for (b in 1:B) {
-  logR[b] <- logLik_theta(beta_boot[b, ], sigma_boot[b], y) -
-    logLik_theta(beta_hat, sigma_hat, y_star = NULL)
+  R[b] <- dnorm(mu_hat,mean=mu_boot, sd=sigma_boot[b])/dnorm(mu_boot, mean=mu_hat, sd=sigma_hat)
 }
 
-# Importance weights
-logw <- sapply(1:B, function(b) {
-  log_prior(beta_boot[b, ], sigma_boot[b]) + logR[b]
-})
-
-w <- exp(logw - max(logw))
+w <- jeff_prior(sigma_boot) * R
 w <- w / sum(w)
 
-#  Posterior summaries for beta_1
 post_mean <- sum(w * beta_boot[, 2])
+
 post_ci <- quantile(beta_boot[, 2], probs = c(0.025, 0.975), weights = w)
 
-list(mean = post_mean, CI = post_ci)
+# Posterior density
+dens_boot <- density(beta_boot[, 2])
+
+bw0 <- density(beta_boot[, 2])$bw
+dens_post <- density(beta_boot[, 2], weights = w, bw = bw0)
+
+# Plot
+plot(dens_boot, col="grey", main="Raw bootstrap density v LR posterior with Jeffrey's prior")
+lines(dens_post, col="black")
+legend("topright", legend=c("Bootstrap","Jeffrey's posterior"),
+       col=c("grey","black"), lty=1)
 
 
 
