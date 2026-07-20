@@ -63,6 +63,7 @@ legend("topright", legend=c("Bootstrap","Jeffrey's posterior"),
 
 
 
+
 # Posterior using MCMC
 
 # Squared Loss
