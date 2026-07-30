@@ -55,7 +55,8 @@ bootstrap_is <- function(B = 5000) {
   # Empirical risk minimiser
   ##########################################################
   
-  beta_hat <- as.vector(solve(t(X) %*% y))
+  #beta_hat <- as.vector(solve(t(X) %*% as.vector(y)))
+  beta_hat <- as.matrix(lm(y ~ x)$coef,nrow=2)
   
   ##########################################################
   # Parametric bootstrap distribution
@@ -90,7 +91,7 @@ bootstrap_is <- function(B = 5000) {
   
   log_proposal_values <- mnormt::dmnorm(
     x = beta_boot,
-    mean = beta_hat,
+    mean = as.vector(beta_hat),
     varcov = Sigma_boot,
     log = TRUE
   )
