@@ -1,5 +1,5 @@
 ############################################################
-# Parametric bootstrap importance sampling Gibbs posterior 
+# Parametric bootstrap importance sampling Gibbs posterior
 # Simple linear regression example
 ############################################################
 
@@ -55,13 +55,13 @@ bootstrap_is <- function(B = 5000) {
   # Empirical risk minimiser
   ##########################################################
   
-  #beta_hat <- as.vector(solve(t(X) %*% as.vector(y)))
-  beta_hat <- as.matrix(lm(y ~ x)$coef,nrow=2)
+  beta_hat <- as.matrix(lm(y ~ x)$coef,nrow=p)
+  
   
   ##########################################################
-  # Parametric bootstrap distribution
+  # Parametric bootstrap law
   #
-  # Y_i | beta ~ N(x_i' beta, 1 / eta)
+  # Y_i | beta_hat ~ N(x_i' beta_hat, 1 / eta)
   ##########################################################
   
   sigma_boot <- sqrt(1 / eta)
@@ -76,12 +76,16 @@ bootstrap_is <- function(B = 5000) {
   colnames(beta_boot) <- colnames(X)
   
   ##########################################################
-  # Normal approximation to bootstrap proposal
+  # Exact fitted bootstrap law for the risk minimiser
+  #
+  # beta_hat* | beta_hat
+  #   ~ N(beta_hat, (1 / eta)(X'X)^(-1))
+  #
   ##########################################################
   
-  Sigma_boot <- cov(beta_boot)
+  Sigma_p_hat <- solve(eta * crossprod(X))
   
-  Sigma_boot <- Sigma_boot + 1e-10 * diag(p) # for num stability
+  Sigma_p_hat <- Sigma_p_hat + 1e-10 * diag(p)
   
   ##########################################################
   # Log importance weights
@@ -89,14 +93,17 @@ bootstrap_is <- function(B = 5000) {
   
   log_target_values <- apply(beta_boot, 1, log_target)
   
-  log_proposal_values <- mnormt::dmnorm(
+  # Exact fitted parametric bootstrap density
+  #
+  # p_hat(beta) = f_{beta_hat}(beta)
+  log_p_hat_values <- mnormt::dmnorm(
     x = beta_boot,
     mean = as.vector(beta_hat),
-    varcov = Sigma_boot,
+    varcov = Sigma_p_hat,
     log = TRUE
   )
   
-  log_weights <- log_target_values - log_proposal_values
+  log_weights <- log_target_values - log_p_hat_values
   
   # Log sum exp stabilisation
   log_weights <- log_weights - max(log_weights)
@@ -127,7 +134,8 @@ bootstrap_is <- function(B = 5000) {
     sd = sqrt(diag(posterior_covariance))
   )
   
-  elapsed_time <- proc.time()[3] - start_time
+  elapsed_time <- proc.time()[3] -
+    start_time
   
   list(
     method = "Parametric bootstrap IS",
@@ -137,7 +145,8 @@ bootstrap_is <- function(B = 5000) {
     summary = posterior_summary,
     ess = ess,
     elapsed = elapsed_time,
-    ess_per_second = ess / elapsed_time
+    ess_per_second = ess / elapsed_time,
+    p_hat_covariance = Sigma_p_hat
   )
 }
 
@@ -154,8 +163,8 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
   ##########################################################
   # Local Gibbs posterior covariance
   #
-  # Neg log posterior Hessian: eta X'X + prior precision
-  #
+  # Negative log posterior Hessian:
+  # eta X'X + prior precision
   ##########################################################
   
   prior_precision <- diag(1 / prior_sd^2, p)
@@ -187,7 +196,10 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
     
     log_acceptance_ratio <- proposed_log_target - current_log_target
     
-    if (log(runif(1)) < min(0, log_acceptance_ratio)) {
+    if (
+      log(runif(1)) <
+      min(0, log_acceptance_ratio)
+    ) {
       current_beta <- proposed_beta
       current_log_target <- proposed_log_target
       accepted <- accepted + 1
@@ -212,8 +224,6 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
   
   elapsed_time <- proc.time()[3] - start_time
   
-  # Use the smallest parameter ESS as a conservative
-  # overall MCMC efficiency measure.
   overall_ess <- min(ess_by_parameter)
   
   list(
@@ -224,7 +234,8 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
     ess = overall_ess,
     acceptance_rate = accepted / n_iter,
     elapsed = elapsed_time,
-    ess_per_second = overall_ess / elapsed_time
+    ess_per_second = overall_ess /
+      elapsed_time
   )
 }
 
@@ -238,21 +249,22 @@ bootstrap_result <- bootstrap_is(B = 5000)
 
 set.seed(789)
 
-mcmc_result <- rwmh(n_iter = 30000, burnin = 5000)
+mcmc_result <- rwmh(n_iter = 30000,burnin = 5000)
 
 ############################################################
 # Computational cost comparison
 ############################################################
 
 cost_table <- data.frame(
-  method = c(bootstrap_result$method, 
+  method = c(bootstrap_result$method,
              mcmc_result$method),
-  elapsed_seconds = c(bootstrap_result$elapsed, 
+  elapsed_seconds = c(bootstrap_result$elapsed,
                       mcmc_result$elapsed),
-  ESS = c(bootstrap_result$ess, 
+  ESS = c(bootstrap_result$ess,
           mcmc_result$ess),
-  ESS_per_second = c(bootstrap_result$ess_per_second, 
-                     mcmc_result$ess_per_second))
+  ESS_per_second = c(bootstrap_result$ess_per_second,
+                     mcmc_result$ess_per_second)
+)
 
 comparison_metrics <- data.frame(
   metric = c(
@@ -260,9 +272,14 @@ comparison_metrics <- data.frame(
     "ESS per second difference: bootstrap minus MCMC",
     "Relative ESS per second: bootstrap divided by MCMC"
   ),
-  value = c(bootstrap_result$elapsed - mcmc_result$elapsed,
-    bootstrap_result$ess_per_second - mcmc_result$ess_per_second,
-    bootstrap_result$ess_per_second / mcmc_result$ess_per_secon)
+  value = c(
+    bootstrap_result$elapsed -
+      mcmc_result$elapsed,
+    bootstrap_result$ess_per_second -
+      mcmc_result$ess_per_second,
+    bootstrap_result$ess_per_second /
+      mcmc_result$ess_per_second
+  )
 )
 
 ############################################################
@@ -271,14 +288,17 @@ comparison_metrics <- data.frame(
 
 posterior_comparison <- data.frame(
   parameter = colnames(X),
-  bootstrap_mean = bootstrap_result$summary$mean,
-  mcmc_mean = mcmc_result$summary$mean,
+  bootstrap_mean =
+    bootstrap_result$summary$mean,
+  mcmc_mean =
+    mcmc_result$summary$mean,
   absolute_mean_difference = abs(
     bootstrap_result$summary$mean -
-      mcmc_result$summary$mean
-  ),
-  bootstrap_sd = bootstrap_result$summary$sd,
-  mcmc_sd = mcmc_result$summary$sd
+      mcmc_result$summary$mean),
+  bootstrap_sd =
+    bootstrap_result$summary$sd,
+  mcmc_sd =
+    mcmc_result$summary$sd
 )
 
 ############################################################
@@ -287,12 +307,12 @@ posterior_comparison <- data.frame(
 
 old_par <- par(no.readonly = TRUE)
 
-# Extra right margin for the legend
 par(mar = c(5, 5, 4, 10))
 
 for (j in seq_len(p)) {
   
   bootstrap_draws_j <- bootstrap_result$draws[, j]
+  
   mcmc_draws_j <- mcmc_result$draws[, j]
   
   plot_range <- range(bootstrap_draws_j, mcmc_draws_j, finite = TRUE)
@@ -301,24 +321,25 @@ for (j in seq_len(p)) {
   # Weighted posterior density estimates
   ##########################################################
   
-  bootstrap_density <- topolow::weighted_kde(
-    x = bootstrap_draws_j,
-    weights = bootstrap_result$weights,
-    n = 500,
-    from = plot_range[1],
-    to = plot_range[2]
-  )
+  bootstrap_density <-
+    topolow::weighted_kde(
+      x = bootstrap_draws_j,
+      weights = bootstrap_result$weights,
+      n = 500,
+      from = plot_range[1],
+      to = plot_range[2]
+    )
   
-  mcmc_density <- topolow::weighted_kde(
-    x = mcmc_draws_j,
-    weights = rep(
-      1 / length(mcmc_draws_j),
-      length(mcmc_draws_j)
-    ),
-    n = 500,
-    from = plot_range[1],
-    to = plot_range[2]
-  )
+  mcmc_density <-
+    topolow::weighted_kde(
+      x = mcmc_draws_j,
+      weights = rep(
+        1 / length(mcmc_draws_j),
+        length(mcmc_draws_j)),
+      n = 500,
+      from = plot_range[1],
+      to = plot_range[2]
+    )
   
   ##########################################################
   # Common vertical axis
@@ -390,6 +411,9 @@ par(old_par)
 
 cat("\nParametric bootstrap IS summary:\n")
 print(bootstrap_result$summary)
+
+cat("\nExact fitted bootstrap covariance:\n")
+print(bootstrap_result$p_hat_covariance)
 
 cat("\nMCMC summary:\n")
 print(mcmc_result$summary)
