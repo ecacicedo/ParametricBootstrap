@@ -31,17 +31,17 @@ p <- ncol(X)
 ############################################################
 
 loss_total <- function(beta, y_data) {
-  residuals <- as.vector(y_data - X %*% beta)
-  0.5 * sum(residuals^2)
+  residuals <- as.vector(y_data - X%*%beta)
+  0.5*sum(residuals^2)
 }
 
 eta <- 1
 
 prior_sd <- 10
 
-log_prior <- function(beta) {-0.5 * sum(beta^2 / prior_sd^2)}
+log_prior <- function(beta) {-sum(beta^2/prior_sd^2)/2}
 
-log_target <- function(beta) {log_prior(beta) - eta * loss_total(beta, y)}
+log_target <- function(beta) {log_prior(beta) - eta*loss_total(beta, y)}
 
 ############################################################
 # Parametric bootstrap importance sampler
@@ -56,7 +56,6 @@ bootstrap_is <- function(B = 5000) {
   ##########################################################
   
   beta_hat <- as.matrix(lm(y ~ x)$coef,nrow=p)
-  
   
   ##########################################################
   # Parametric bootstrap law
