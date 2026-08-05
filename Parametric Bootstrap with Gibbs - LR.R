@@ -1,7 +1,7 @@
-############################################################
-# Parametric bootstrap importance sampling Gibbs posterior
+#########################################################################
+# Parametric bootstrap importance sampling Generalized Bayesian posterior
 # Simple linear regression example
-############################################################
+#########################################################################
 
 library(mnormt)
 library(LaplacesDemon)
@@ -31,17 +31,17 @@ p <- ncol(X)
 ############################################################
 
 loss_total <- function(beta, y_data) {
-  residuals <- as.vector(y_data - X%*%beta)
-  0.5*sum(residuals^2)
+  residuals <- as.vector(y_data - X %*% beta)
+  sum(residuals^2) / 2
 }
 
 eta <- 1
 
 prior_sd <- 10
 
-log_prior <- function(beta) {-sum(beta^2/prior_sd^2)/2}
+log_prior <- function(beta) {-sum(beta^2 / prior_sd^2) / 2}
 
-log_target <- function(beta) {log_prior(beta) - eta*loss_total(beta, y)}
+log_target <- function(beta) {log_prior(beta) - eta * loss_total(beta, y)}
 
 ############################################################
 # Parametric bootstrap importance sampler
@@ -55,11 +55,10 @@ bootstrap_is <- function(B = 5000) {
   # Empirical risk minimiser
   ##########################################################
   
-  beta_hat <- as.matrix(lm(y ~ x)$coef,nrow=p)
+  beta_hat <- solve(t(X) %*% X, t(X) %*% y) 
   
   ##########################################################
   # Parametric bootstrap law
-  #
   # Y_i | beta_hat ~ N(x_i' beta_hat, 1 / eta)
   ##########################################################
   
@@ -70,21 +69,18 @@ bootstrap_is <- function(B = 5000) {
   for (b in seq_len(B)) {
     y_star <- as.vector(X %*% beta_hat + rnorm(n, sd = sigma_boot))
     
-    beta_boot[b, ] <- solve(t(X) %*% X,t(X) %*% y_star)}
+    beta_boot[b, ] <- solve( t(X) %*% X, t(X) %*% y_star ) }
   
   colnames(beta_boot) <- colnames(X)
   
   ##########################################################
-  # Exact fitted bootstrap law for the risk minimiser
-  #
-  # beta_hat* | beta_hat
-  #   ~ N(beta_hat, (1 / eta)(X'X)^(-1))
-  #
+  # Fitted bootstrap law for the risk minimiser
+  # beta_hat* | beta_hat ~ N(beta_hat, (1 / eta)(X'X)^(-1))
   ##########################################################
   
   Sigma_p_hat <- solve(eta * crossprod(X))
   
-  Sigma_p_hat <- Sigma_p_hat + 1e-10 * diag(p)
+  Sigma_p_hat <- Sigma_p_hat + 1e-10 * diag(p) # strengthen the diagonal
   
   ##########################################################
   # Log importance weights
@@ -92,9 +88,7 @@ bootstrap_is <- function(B = 5000) {
   
   log_target_values <- apply(beta_boot, 1, log_target)
   
-  # Exact fitted parametric bootstrap density
-  #
-  # p_hat(beta) = f_{beta_hat}(beta)
+  # Parametric bootstrap density
   log_p_hat_values <- mnormt::dmnorm(
     x = beta_boot,
     mean = as.vector(beta_hat),
@@ -104,12 +98,11 @@ bootstrap_is <- function(B = 5000) {
   
   log_weights <- log_target_values - log_p_hat_values
   
-  # Log sum exp stabilisation
-  log_weights <- log_weights - max(log_weights)
-  
   raw_weights <- exp(log_weights)
   
   weights <- raw_weights / sum(raw_weights)
+  
+  elapsed_time <- proc.time()[3] - start_time
   
   ##########################################################
   # Importance sampling ESS
@@ -121,27 +114,22 @@ bootstrap_is <- function(B = 5000) {
   # Weighted posterior summaries
   ##########################################################
   
-  posterior_mean <- colSums(beta_boot * weights)
+  post_mean <- colSums(beta_boot * weights)
   
-  centered_draws <- sweep(beta_boot, 2, posterior_mean, "-")
+  post_cov <- cov(beta_boot)
   
-  posterior_covariance <- t(centered_draws) %*% (centered_draws * weights)
-  
-  posterior_summary <- data.frame(
+  post_summary <- data.frame(
     parameter = colnames(beta_boot),
-    mean = posterior_mean,
-    sd = sqrt(diag(posterior_covariance))
+    mean = post_mean,
+    sd = sqrt(diag(post_cov))
   )
-  
-  elapsed_time <- proc.time()[3] -
-    start_time
   
   list(
     method = "Parametric bootstrap IS",
     beta_hat = beta_hat,
     draws = beta_boot,
     weights = weights,
-    summary = posterior_summary,
+    summary = post_summary,
     ess = ess,
     elapsed = elapsed_time,
     ess_per_second = ess / elapsed_time,
@@ -157,11 +145,10 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
   
   start_time <- proc.time()[3]
   
-  beta_hat <- as.vector(solve(t(X) %*% X, t(X) %*% y))
+  beta_hat <- solve( t(X) %*% X, t(X) %*% y)
   
   ##########################################################
-  # Local Gibbs posterior covariance
-  #
+  # Local Generalized Bayesian posterior covariance
   # Negative log posterior Hessian:
   # eta X'X + prior precision
   ##########################################################
@@ -181,7 +168,7 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
   
   accepted <- 0
   
-  for (iteration in seq_len(n_iter)) {
+  for (i in seq_len(n_iter)) {
     
     proposed_beta <- as.vector(
       mnormt::rmnorm(
@@ -193,48 +180,47 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
     
     proposed_log_target <- log_target(proposed_beta)
     
-    log_acceptance_ratio <- proposed_log_target - current_log_target
+    log_acc_ratio <- proposed_log_target - current_log_target
     
     if (
       log(runif(1)) <
-      min(0, log_acceptance_ratio)
+      min(0, log_acc_ratio)
     ) {
       current_beta <- proposed_beta
       current_log_target <- proposed_log_target
       accepted <- accepted + 1
     }
     
-    draws[iteration, ] <- current_beta
+    draws[i, ] <- current_beta
   }
   
   draws_keep <- draws[(burnin + 1):n_iter, , drop = FALSE]
   
+  elapsed_time <- proc.time()[3] - start_time
+  
   colnames(draws_keep) <- colnames(X)
   
-  ess_by_parameter <- apply(draws_keep, 2, LaplacesDemon::ESS)
+  ess_beta <- apply(draws_keep, 2, LaplacesDemon::ESS)
   
-  posterior_summary <- data.frame(
+  post_summary <- data.frame(
     parameter = colnames(draws_keep),
     mean = colMeans(draws_keep),
     sd = apply(draws_keep, 2, sd),
-    ess = ess_by_parameter,
+    ess = ess_beta,
     row.names = NULL
   )
   
-  elapsed_time <- proc.time()[3] - start_time
-  
-  overall_ess <- min(ess_by_parameter)
+  overall_ess <- min(ess_beta)
   
   list(
     method = "Random walk Metropolis Hastings",
     draws = draws_keep,
-    summary = posterior_summary,
-    ess_by_parameter = ess_by_parameter,
+    summary = post_summary,
+    ess_beta = ess_beta,
     ess = overall_ess,
     acceptance_rate = accepted / n_iter,
     elapsed = elapsed_time,
-    ess_per_second = overall_ess /
-      elapsed_time
+    ess_per_second = overall_ess / elapsed_time
   )
 }
 
@@ -255,29 +241,22 @@ mcmc_result <- rwmh(n_iter = 30000,burnin = 5000)
 ############################################################
 
 cost_table <- data.frame(
-  method = c(bootstrap_result$method,
-             mcmc_result$method),
-  elapsed_seconds = c(bootstrap_result$elapsed,
-                      mcmc_result$elapsed),
-  ESS = c(bootstrap_result$ess,
-          mcmc_result$ess),
-  ESS_per_second = c(bootstrap_result$ess_per_second,
-                     mcmc_result$ess_per_second)
+  method = c(bootstrap_result$method, mcmc_result$method),
+  elapsed_seconds = c(bootstrap_result$elapsed, mcmc_result$elapsed),
+  ESS = c(bootstrap_result$ess, mcmc_result$ess),
+  ESS_per_second = c(bootstrap_result$ess_per_second, mcmc_result$ess_per_second)
 )
 
 comparison_metrics <- data.frame(
   metric = c(
     "Time difference: bootstrap minus MCMC",
-    "ESS per second difference: bootstrap minus MCMC",
-    "Relative ESS per second: bootstrap divided by MCMC"
+    "Normalized ESS per second difference: bootstrap minus MCMC",
+    "Relative Normalized ESS per second: bootstrap divided by MCMC"
   ),
   value = c(
-    bootstrap_result$elapsed -
-      mcmc_result$elapsed,
-    bootstrap_result$ess_per_second -
-      mcmc_result$ess_per_second,
-    bootstrap_result$ess_per_second /
-      mcmc_result$ess_per_second
+    bootstrap_result$elapsed - mcmc_result$elapsed,
+    bootstrap_result$ess_per_second - mcmc_result$ess_per_second,
+    bootstrap_result$ess_per_second / mcmc_result$ess_per_secon
   )
 )
 
@@ -285,19 +264,13 @@ comparison_metrics <- data.frame(
 # Compare posterior means
 ############################################################
 
-posterior_comparison <- data.frame(
+post_comparison <- data.frame(
   parameter = colnames(X),
-  bootstrap_mean =
-    bootstrap_result$summary$mean,
-  mcmc_mean =
-    mcmc_result$summary$mean,
-  absolute_mean_difference = abs(
-    bootstrap_result$summary$mean -
-      mcmc_result$summary$mean),
-  bootstrap_sd =
-    bootstrap_result$summary$sd,
-  mcmc_sd =
-    mcmc_result$summary$sd
+  bootstrap_mean = bootstrap_result$summary$mean,
+  mcmc_mean = mcmc_result$summary$mean,
+  absolute_mean_difference = abs(bootstrap_result$summary$mean - mcmc_result$summary$mean),
+  bootstrap_sd = bootstrap_result$summary$sd,
+  mcmc_sd = mcmc_result$summary$sd
 )
 
 ############################################################
@@ -332,9 +305,7 @@ for (j in seq_len(p)) {
   mcmc_density <-
     topolow::weighted_kde(
       x = mcmc_draws_j,
-      weights = rep(
-        1 / length(mcmc_draws_j),
-        length(mcmc_draws_j)),
+      weights = rep(1 / length(mcmc_draws_j), length(mcmc_draws_j)),
       n = 500,
       from = plot_range[1],
       to = plot_range[2]
@@ -358,10 +329,7 @@ for (j in seq_len(p)) {
     col = "blue",
     xlab = colnames(X)[j],
     ylab = "Posterior density",
-    main = paste(
-      "Gibbs posterior for",
-      colnames(X)[j]
-    ),
+    main = paste("Generalized Bayesian posterior for", colnames(X)[j]),
     xlim = plot_range,
     ylim = y_limit
   )
@@ -427,4 +395,4 @@ cat("\nEfficiency differences:\n")
 print(comparison_metrics)
 
 cat("\nPosterior comparison:\n")
-print(posterior_comparison)
+print(post_comparison)
