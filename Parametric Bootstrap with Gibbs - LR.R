@@ -5,7 +5,6 @@
 
 library(mnormt)
 library(LaplacesDemon)
-library(topolow)
 
 ############################################################
 # Simulated data
@@ -281,6 +280,8 @@ old_par <- par(no.readonly = TRUE)
 
 par(mar = c(5, 5, 4, 10))
 
+beta_labels <- expression(beta[0], beta[1])
+
 for (j in seq_len(p)) {
   
   bootstrap_draws_j <- bootstrap_result$draws[, j]
@@ -290,35 +291,33 @@ for (j in seq_len(p)) {
   plot_range <- range(bootstrap_draws_j, mcmc_draws_j, finite = TRUE)
   
   ##########################################################
-  # Weighted posterior density estimates
+  # Estimate densities
   ##########################################################
   
-  bootstrap_density <-
-    topolow::weighted_kde(
-      x = bootstrap_draws_j,
-      weights = bootstrap_result$weights,
-      n = 500,
-      from = plot_range[1],
-      to = plot_range[2]
-    )
+  bw_boot <- bw.nrd0(bootstrap_draws_j)
   
-  mcmc_density <-
-    topolow::weighted_kde(
-      x = mcmc_draws_j,
-      weights = rep(1 / length(mcmc_draws_j), length(mcmc_draws_j)),
-      n = 500,
-      from = plot_range[1],
-      to = plot_range[2]
-    )
+  bootstrap_density <- density(
+    bootstrap_draws_j,
+    weights = bootstrap_result$weights,
+    bw = bw_boot,
+    n = 500,
+    from = plot_range[1],
+    to = plot_range[2]
+  )
   
-  ##########################################################
-  # Common vertical axis
-  ##########################################################
+  mcmc_density <- density(
+    x = mcmc_draws_j,
+    weights = rep(1 / length(mcmc_draws_j),length(mcmc_draws_j)),
+    n = 500,
+    from = plot_range[1],
+    to = plot_range[2]
+  )
   
+
   y_limit <- c(0, 1.05 * max(bootstrap_density$y, mcmc_density$y, na.rm = TRUE))
   
   ##########################################################
-  # Plot bootstrap IS density
+  # Plot densities
   ##########################################################
   
   plot(
@@ -327,47 +326,26 @@ for (j in seq_len(p)) {
     type = "l",
     lwd = 2,
     col = "blue",
-    xlab = colnames(X)[j],
+    xlab = beta_labels[j],
     ylab = "Posterior density",
-    main = paste("Generalized Bayesian posterior for", colnames(X)[j]),
+    main = bquote("Generalized Bayesian posterior for " * .(beta_labels[[j]])),
     xlim = plot_range,
     ylim = y_limit
   )
-  
-  ##########################################################
-  # Add MCMC density
-  ##########################################################
-  
+
   lines(x = mcmc_density$x, y = mcmc_density$y, lwd = 2, col = "red", lty = 2)
   
-  ##########################################################
-  # Add true parameter value
-  ##########################################################
-  
   abline(v = beta_true[j], col = "black", lwd = 2, lty = 3)
-  
-  ##########################################################
-  # Legend outside the plot
-  ##########################################################
   
   legend(
     "topright",
     inset = c(-1.15, 0),
-    legend = c(
-      "Parametric bootstrap IS",
-      "Random walk MH",
-      "True value"
-    ),
-    col = c(
-      "blue",
-      "red",
-      "black"
-    ),
-    lwd = 2,
-    lty = c(1, 2, 3),
-    bty = "n",
-    xpd = TRUE
-  )
+    legend = c("Parametric bootstrap IS", "Random walk MH", "True value"),
+    col = c("blue", "red", "black"), 
+    lwd = 2, 
+    lty = c(1, 2, 3), 
+    bty = "n", 
+    xpd = TRUE)
 }
 
 par(old_par)
