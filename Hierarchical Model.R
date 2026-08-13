@@ -19,6 +19,8 @@ library(LaplacesDemon)
 #
 ############################################################
 
+set.seed(123)
+
 k <- 20
 n <- runif(k, min = 200, max = 400)
 n <- round(n)
