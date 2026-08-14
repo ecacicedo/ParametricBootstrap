@@ -1,23 +1,19 @@
-#########################################################################
-# Parametric bootstrap importance sampling Generalized Bayesian posterior
+# Title ####
+# Parametric bootstrap importance sampling 
+# Generalized Bayesian posterior
 # Hierarchical model example
-#########################################################################
 
-# Check necessary packages
+# Check necessary packages ####
 
 library("extraDistr")
 
 i <- 20
 j <- 3
 
-############################################################
-# Simulated data process
-# 
+# Simulated data process ####
 # y_i,j|beta_j ~ normal(beta_j * X_ij, 1)
 # beta_j ~ normal(mu_b, 0.15)
 # mu_b ~ uniform(0.5,1)
-#
-############################################################
 
 set.seed(123)
 

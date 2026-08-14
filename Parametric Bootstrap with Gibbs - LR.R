@@ -1,14 +1,11 @@
-#########################################################################
+# Title #####
 # Parametric bootstrap importance sampling Generalized Bayesian posterior
 # Simple linear regression example
-#########################################################################
 
 library(mnormt)
 library(LaplacesDemon)
 
-############################################################
-# Simulated data
-############################################################
+# Simulated data ####
 
 set.seed(123)
 
@@ -25,9 +22,7 @@ y <- as.vector(X %*% beta_true + rnorm(n, sd = sigma_true))
 
 p <- ncol(X)
 
-############################################################
-# Loss, learning rate and prior
-############################################################
+# Loss, learning rate and prior ####
 
 loss_total <- function(beta, y_data) {
   residuals <- as.vector(y_data - X %*% beta)
@@ -42,25 +37,19 @@ log_prior <- function(beta) {-sum(beta^2 / prior_sd^2) / 2}
 
 log_target <- function(beta) {log_prior(beta) - eta * loss_total(beta, y)}
 
-############################################################
-# Parametric bootstrap importance sampler
-############################################################
+# Parametric bootstrap importance sampler ####
 
 bootstrap_is <- function(B = 5000) {
   
   start_time <- proc.time()[3]
   
-  ##########################################################
   # Empirical risk minimiser
-  ##########################################################
-  
+
   beta_hat <- solve(t(X) %*% X, t(X) %*% y) 
   
-  ##########################################################
   # Parametric bootstrap law
   # Y_i | beta_hat ~ N(x_i' beta_hat, 1 / eta)
-  ##########################################################
-  
+
   sigma_boot <- sqrt(1 / eta)
   
   beta_boot <- matrix(NA_real_, nrow = B, ncol = p)
@@ -72,19 +61,15 @@ bootstrap_is <- function(B = 5000) {
   
   colnames(beta_boot) <- colnames(X)
   
-  ##########################################################
   # Fitted bootstrap law for the risk minimiser
   # beta_hat* | beta_hat ~ N(beta_hat, (1 / eta)(X'X)^(-1))
-  ##########################################################
-  
+
   Sigma_p_hat <- solve(eta * crossprod(X))
   
   Sigma_p_hat <- Sigma_p_hat + 1e-10 * diag(p) # strengthen the diagonal
   
-  ##########################################################
   # Log importance weights
-  ##########################################################
-  
+
   log_target_values <- apply(beta_boot, 1, log_target)
   
   # Parametric bootstrap density
@@ -103,16 +88,12 @@ bootstrap_is <- function(B = 5000) {
   
   elapsed_time <- proc.time()[3] - start_time
   
-  ##########################################################
   # Importance sampling ESS
-  ##########################################################
-  
+
   ess <- 1 / sum(weights^2)
   
-  ##########################################################
   # Weighted posterior summaries
-  ##########################################################
-  
+
   post_mean <- colSums(beta_boot * weights)
   
   post_cov <- cov(beta_boot)
@@ -136,9 +117,7 @@ bootstrap_is <- function(B = 5000) {
   )
 }
 
-############################################################
-# Random Walk Metropolis Hastings
-############################################################
+# Random Walk Metropolis Hastings ####
 
 rwmh <- function(n_iter = 30000, burnin = 5000) {
   
@@ -146,12 +125,10 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
   
   beta_hat <- solve( t(X) %*% X, t(X) %*% y)
   
-  ##########################################################
   # Local Generalized Bayesian posterior covariance
   # Negative log posterior Hessian:
   # eta X'X + prior precision
-  ##########################################################
-  
+
   prior_precision <- diag(1 / prior_sd^2, p)
   
   local_covariance <- solve(eta * t(X) %*% X + prior_precision)
@@ -223,9 +200,7 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
   )
 }
 
-############################################################
-# Run both methods
-############################################################
+# Run both methods ####
 
 set.seed(456)
 
@@ -235,9 +210,7 @@ set.seed(789)
 
 mcmc_result <- rwmh(n_iter = 30000,burnin = 5000)
 
-############################################################
-# Computational cost comparison
-############################################################
+# Computational cost comparison ####
 
 cost_table <- data.frame(
   method = c(bootstrap_result$method, mcmc_result$method),
@@ -259,9 +232,7 @@ comparison_metrics <- data.frame(
   )
 )
 
-############################################################
-# Compare posterior means
-############################################################
+# Compare posterior means ####
 
 post_comparison <- data.frame(
   parameter = colnames(X),
@@ -272,9 +243,7 @@ post_comparison <- data.frame(
   mcmc_sd = mcmc_result$summary$sd
 )
 
-############################################################
-# Overlay posterior densities
-############################################################
+# Overlay posterior densities ####
 
 old_par <- par(no.readonly = TRUE)
 
@@ -290,10 +259,8 @@ for (j in seq_len(p)) {
   
   plot_range <- range(bootstrap_draws_j, mcmc_draws_j, finite = TRUE)
   
-  ##########################################################
   # Estimate densities
-  ##########################################################
-  
+
   bw_boot <- bw.nrd0(bootstrap_draws_j)
   
   bootstrap_density <- density(
@@ -316,9 +283,7 @@ for (j in seq_len(p)) {
 
   y_limit <- c(0, 1.05 * max(bootstrap_density$y, mcmc_density$y, na.rm = TRUE))
   
-  ##########################################################
   # Plot densities
-  ##########################################################
   
   plot(
     x = bootstrap_density$x,
@@ -350,9 +315,7 @@ for (j in seq_len(p)) {
 
 par(old_par)
 
-############################################################
-# Posterior summaries
-############################################################
+# Posterior summaries ####
 
 cat("\nParametric bootstrap IS summary:\n")
 print(bootstrap_result$summary)
