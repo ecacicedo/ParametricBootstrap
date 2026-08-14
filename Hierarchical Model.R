@@ -5,34 +5,36 @@
 
 # Check necessary packages
 
-library(mnormt)
-library(LaplacesDemon)
+library("extraDistr")
+
+i <- 20
+j <- 3
 
 ############################################################
 # Simulated data process
 # 
-# y_i|theta_i, n_i ~ binomial (n_i, theta_i)
-# theta_i|alpha,beta ~ beta(alpha, beta)
-# n_i ~ uniform(200, 400)
-# alpha ~ exponential(0.01)
-# beta ~ exponential(0.01)
+# y_i,j|beta_j ~ normal(beta_j * X_ij, 1)
+# beta_j ~ normal(mu_b, 0.15)
+# mu_b ~ uniform(0.5,1)
 #
 ############################################################
 
 set.seed(123)
 
-k <- 20
-n <- runif(k, min = 200, max = 400)
-n <- round(n)
-alpha <- rexp(1, rate=0.01)
-beta <- rexp(1, rate=0.01)
+X <- round(rnorm(i * j, mean = 50, sd = 10))
 
-theta <- rep(NA, k)
-for(i in 1:k){
-  theta[i] <- rbeta(n[i],alpha,beta)
-}
+X1 <- X[1 : i]
+X2 <- X[(i + 1) : (2 * i)]
+X3 <- X[(2 * i + 1) : (3 * i)]
 
-y <- rbinom(20,n,theta)
+mu_b <- runif(1, min = 0.5, max = 1)
 
-theta_hat <- y/n
+beta <- rnorm(j, mean = mu_b, sd = 0.15)
+
+y1 <- X1 * beta[1] + rnorm(i, mean = 0, sd = 1)
+y2 <- X2 * beta[2] + rnorm(i, mean = 0, sd = 1)
+y3 <- X3 * beta[3] + rnorm(i, mean = 0, sd = 1)
+y1
+y2
+y3
 
