@@ -829,332 +829,102 @@ for (j in seq_len(3)) {
   # Only mu has a directly comparable true value
   ##########################################################
   
-  if (
-    j == 1
-  ) {
+  if (j == 1) {abline(v = mu_true, col = "black", lwd = 2, lty =3)
     
-    abline(
-      v =
-        mu_true,
-      
-      col =
-        "black",
-      
-      lwd =
-        2,
-      
-      lty =
-        3
-    )
-    
-    
-    legend(
-      "topright",
-      
-      inset =
-        c(
-          -1.15,
-          0
-        ),
-      
-      legend =
-        c(
-          "Parametric bootstrap IS",
-          "Random walk MH",
-          "True value"
-        ),
-      
-      col =
-        c(
-          "blue",
-          "red",
-          "black"
-        ),
-      
-      lwd =
-        2,
-      
-      lty =
-        c(
-          1,
-          2,
-          3
-        ),
-      
-      bty =
-        "n",
-      
-      xpd =
-        TRUE
-    )
-    
-  } else {
-    
-    legend(
-      "topright",
-      
-      inset =
-        c(
-          -1.15,
-          0
-        ),
-      
-      legend =
-        c(
-          "Parametric bootstrap IS",
-          "Random walk MH"
-        ),
-      
-      col =
-        c(
-          "blue",
-          "red"
-        ),
-      
-      lwd =
-        2,
-      
-      lty =
-        c(
-          1,
-          2
-        ),
-      
-      bty =
-        "n",
-      
-      xpd =
-        TRUE
-    )
+    legend("topright", 
+           inset = c(-1.15, 0), 
+           legend = c("Parametric bootstrap IS", "Random walk MH", "True value"), 
+           col = c("blue","red","black"),
+           lwd = 2, 
+           lty = c(1,2,3),
+           bty = "n", 
+           xpd = TRUE)} 
+  else {legend("topright", 
+               inset =c(-1.15, 0),
+               legend = c("Parametric bootstrap IS", "Random walk MH"),
+               col =c("blue","red"),
+               lwd = 2,
+               lty = c(1, 2), 
+               bty = "n",
+               xpd = TRUE)}
   }
-}
 
-
-par(
-  old_par
-)
-
+par(old_par)
 
 ############################################################
 # Conditional variance at posterior means
 ############################################################
 
-pbis_mean <-
-  setNames(
-    bootstrap_result$summary$mean,
-    bootstrap_result$summary$parameter
-  )
+pbis_mean <-setNames(bootstrap_result$summary$mean, bootstrap_result$summary$parameter)
 
+mcmc_mean <-setNames(mcmc_result$summary$mean, mcmc_result$summary$parameter)
 
-mcmc_mean <-
-  setNames(
-    mcmc_result$summary$mean,
-    mcmc_result$summary$parameter
-  )
+h_arch_pbis <- arch_variance(theta =pbis_mean, r_data =r)
 
-
-h_arch_pbis <-
-  arch_variance(
-    theta =
-      pbis_mean,
-    r_data =
-      r
-  )
-
-
-h_arch_mcmc <-
-  arch_variance(
-    theta =
-      mcmc_mean,
-    r_data =
-      r
-  )
-
+h_arch_mcmc <-arch_variance(theta = mcmc_mean, r_data = r)
 
 ############################################################
 # Compare true GARCH variance and fitted ARCH variance
 ############################################################
 
-plot(
-  h_true,
-  type =
-    "l",
-  lwd =
-    2,
-  xlab =
-    "Time",
-  ylab =
-    expression(h[t]),
-  main =
-    "True GARCH variance versus fitted ARCH variance"
-)
+plot(h_true, type = "l", lwd = 2, xlab = "Time", ylab = expression(h[t]),
+     main = "True GARCH variance versus fitted ARCH variance")
+
+lines(h_arch_pbis, lwd = 2, col = "blue", lty = 2)
+
+lines(h_arch_mcmc, lwd = 2, col = "red", lty = 3)
 
 
-lines(
-  h_arch_pbis,
-  lwd =
-    2,
-  col =
-    "blue",
-  lty =
-    2
-)
-
-
-lines(
-  h_arch_mcmc,
-  lwd =
-    2,
-  col =
-    "red",
-  lty =
-    3
-)
-
-
-legend(
-  "topright",
-  
-  legend =
-    c(
-      "True GARCH variance",
-      "ARCH posterior mean: PBIS",
-      "ARCH posterior mean: RWMH"
-    ),
-  
-  col =
-    c(
-      "black",
-      "blue",
-      "red"
-    ),
-  
-  lwd =
-    2,
-  
-  lty =
-    c(
-      1,
-      2,
-      3
-    ),
-  
-  bty =
-    "n"
-)
-
+legend("topright",
+       legend = c("True GARCH variance",
+                  "ARCH posterior mean: PBIS",
+                  "ARCH posterior mean: RWMH"),
+       col = c("black","blue","red"),
+       lwd = 2,
+       lty = c(1, 2, 3), 
+       bty ="n")
 
 ############################################################
 # Output
 ############################################################
 
-cat(
-  "\nTrue GARCH(1,1) DGP parameters:\n"
-)
+cat("\nTrue GARCH(1,1) DGP parameters:\n")
 
+print(c(mu = mu_true, omega = omega_garch_true, 
+        alpha = alpha_garch_true, beta = beta_garch_true))
 
-print(
-  c(
-    mu =
-      mu_true,
-    
-    omega =
-      omega_garch_true,
-    
-    alpha =
-      alpha_garch_true,
-    
-    beta =
-      beta_garch_true
-  )
-)
+cat("\nARCH(1) empirical risk minimizer:\n")
 
+print(theta_hat)
 
-cat(
-  "\nARCH(1) empirical risk minimizer:\n"
-)
+cat("\nGeneralized Bayesian learning rate:\n")
 
+print(eta)
 
-print(
-  theta_hat
-)
+cat("\nParametric bootstrap IS posterior summary:\n")
 
+print(bootstrap_result$summary)
 
-cat(
-  "\nGeneralized Bayesian learning rate:\n"
-)
+cat("\nRWMH posterior summary:\n")
 
+print(mcmc_result$summary)
 
-print(
-  eta
-)
+cat("\nRWMH acceptance rate:\n")
 
+print(mcmc_result$acceptance_rate)
 
-cat(
-  "\nParametric bootstrap IS posterior summary:\n"
-)
+cat("\nImportance sampling diagnostics:\n")
 
+print(weight_diagnostics)
 
-print(
-  bootstrap_result$summary
-)
+cat("\nComputational cost comparison:\n")
 
+print(cost_table)
 
-cat(
-  "\nRWMH posterior summary:\n"
-)
+cat("\nEfficiency comparison:\n")
 
+print(comparison_metrics)
 
-print(
-  mcmc_result$summary
-)
+cat("\nPosterior comparison:\n")
 
-
-cat(
-  "\nRWMH acceptance rate:\n"
-)
-
-
-print(
-  mcmc_result$acceptance_rate
-)
-
-
-cat(
-  "\nImportance sampling diagnostics:\n"
-)
-
-
-print(
-  weight_diagnostics
-)
-
-
-cat(
-  "\nComputational cost comparison:\n"
-)
-
-
-print(
-  cost_table
-)
-
-
-cat(
-  "\nEfficiency comparison:\n"
-)
-
-
-print(
-  comparison_metrics
-)
-
-
-cat(
-  "\nPosterior comparison:\n"
-)
-
-
-print(
-  post_comparison
-)
+print(post_comparison)
