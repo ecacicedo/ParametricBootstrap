@@ -1,34 +1,20 @@
-############################################################
-# Parametric Bootstrap Importance Sampling
+# Parametric Bootstrap Importance Sampling ####
 # Generalized Bayesian posterior
 #
 # True DGP:      GARCH(1,1)
 # Working model: ARCH(1)
-#
-# NO transformed parameterization
-#
-# Parameter vector:
-#
-# theta = (mu, omega, alpha)
-#
-############################################################
+# Parameter vector: theta = (mu, omega, alpha)
 
-
-############################################################
-# Packages
-############################################################
 
 library(mnormt)
 library(LaplacesDemon)
 
 
-############################################################
-# True GARCH(1,1) DGP
-############################################################
+# True GARCH(1,1) DGP ####
 
 set.seed(123)
 
-n <- 1000
+n <- 500
 
 mu_true <- 0.0005
 
@@ -36,13 +22,10 @@ omega_garch_true <- 5e-6
 alpha_garch_true <- 0.08
 beta_garch_true <- 0.90
 
-
 stopifnot(alpha_garch_true + beta_garch_true < 1)
 
-
-############################################################
-# Simulate GARCH(1,1)
-############################################################
+# Simulate GARCH(1,1) ####
+# True DGP: h_t = omega + alpha * (r_{t-1} - mu)^2 + beta * h_{t-1}
 
 simulate_garch11 <- function(n, mu, omega, alpha, beta) {
   
@@ -62,7 +45,6 @@ simulate_garch11 <- function(n, mu, omega, alpha, beta) {
   list(returns = r, variance = h)
 }
 
-
 garch_data <- simulate_garch11(
     n = n,
     mu = mu_true,
@@ -71,21 +53,12 @@ garch_data <- simulate_garch11(
     beta = beta_garch_true
     )
 
-
 r <- garch_data$returns
 
 h_true <- garch_data$variance
 
-############################################################
-# ARCH(1) conditional variance
-#
-# Working model:
-#
-# h_t =
-#   omega +
-#   alpha * (r_{t-1} - mu)^2
-#
-############################################################
+# ARCH(1) conditional variance ####
+# Working model: h_t = omega + alpha * (r_{t-1} - mu)^2
 
 arch_variance <- function(theta, r_data) {
   
@@ -103,46 +76,21 @@ arch_variance <- function(theta, r_data) {
   T_obs <- length(r_data)
   h <- numeric(T_obs)
   
-  ##########################################################
   # Stationary ARCH initialization
-  ##########################################################
   
   h[1] <- omega / (1 - alpha)
   
-  if (!is.finite(h[1]) || h[1] <= 0) {
-    return(rep(NA_real_, T_obs))
-    }
+  if (!is.finite(h[1]) || h[1] <= 0) {return(rep(NA_real_, T_obs))}
   
-  
-  ##########################################################
   # ARCH recursion
-  ##########################################################
   
-  for (t in 2:T_obs) {
-    h[t] <- omega + alpha *(r_data[t - 1] - mu)^2}
+  for (t in 2:T_obs) {h[t] <- omega + alpha *(r_data[t - 1] - mu)^2}
   
   h
 }
 
-
-############################################################
-# Gaussian ARCH loss
-#
-# Negative log likelihood up to constants:
-#
-# L(theta)
-#
-# = 1/2 sum_t [
-#
-#     log(h_t)
-#
-#     +
-#
-#     (r_t - mu)^2 / h_t
-#
-#   ]
-#
-
+# Gaussian ARCH loss ####
+# L(theta; r) = 1/2 sum_t [log(h_t) + (r_t - mu)^2 / h_t]
 
 arch_loss <- function(theta, r_data) {
   
@@ -168,31 +116,24 @@ arch_loss <- function(theta, r_data) {
   loss
 }
 
-
-############################################################
-# ARCH empirical risk minimizer
-############################################################
+# ARCH empirical risk minimizer ####
 
 fit_arch_erm <- function(r_data, start = NULL) {
   
-  sample_variance <-var(r_data)
+  sample_variance <- var(r_data)
   
   if (is.null(start)) {
     start <- c(mu = mean(r_data), 
                omega = max(0.5 * sample_variance, 1e-8), alpha = 0.20)
     }
   
-  ##########################################################
   # Make sure starting values satisfy constraints
-  ##########################################################
   
   start[2] <- max(start[2], 1e-10)
   
   start[3] <- min(max(start[3], 1e-5), 1 - 1e-5)
   
-  ##########################################################
   # Bounded optimization
-  ##########################################################
   
   fit <- optim(par = start, fn = arch_loss, r_data = r_data,
       method = "L-BFGS-B", lower = c(-Inf, 1e-10, 1e-5),
@@ -202,24 +143,16 @@ fit_arch_erm <- function(r_data, start = NULL) {
   
   list(par = fit$par, loss = fit$value, convergence = fit$convergence)}
 
-############################################################
-# Fit working ARCH(1)
-############################################################
+# Fit working ARCH(1) ####
 
 arch_hat <- fit_arch_erm(r_data = r)
 
 theta_hat <- arch_hat$par
 
-############################################################
-# Priors
-#
-# mu    ~ N(0, 0.02^2)
-#
+# Priors ####
+# mu ~ N(0, 0.02^2)
 # omega ~ Lognormal(log(1e-4), 1.5^2)
-#
 # alpha ~ Beta(2, 5)
-#
-############################################################
 
 prior_mu_sd <- 0.02
 
@@ -236,10 +169,8 @@ log_prior <- function(theta) {
   omega <- theta[2]
   alpha <- theta[3]
   
-  ##########################################################
   # Support restrictions
-  ##########################################################
-  
+
   if (!is.finite(mu) || !is.finite(omega) || !is.finite(alpha) ||
     omega <= 0 || alpha <= 0 || alpha >= 1) {return(-Inf)}
   
@@ -249,22 +180,13 @@ log_prior <- function(theta) {
     dbeta(alpha,mshape1 = prior_alpha_a, shape2 = prior_alpha_b, log = TRUE)
 }
 
-############################################################
-# Generalized Bayesian learning rate
-############################################################
+# Generalized Bayesian learning rate ####
 
 eta <- 0.50
 
-############################################################
-# Generalized Bayesian posterior target
-#
-# pi_G(theta | r)
-#
-# proportional to
-#
-# pi(theta) exp{-eta L(theta; r)}
-#
-############################################################
+# Generalized Bayesian posterior target ####
+# pi_G(theta | r) \propto pi(theta) exp{-eta L(theta; r)}
+
 
 log_target <- function(theta, r_data = r) {
   
@@ -279,11 +201,8 @@ log_target <- function(theta, r_data = r) {
   lp - eta * loss
 }
 
-############################################################
-# Simulate from fitted ARCH(1)
-#
+# Simulate from fitted ARCH(1) ####
 # Used for parametric bootstrap
-############################################################
 
 simulate_arch1 <- function(n, theta) {
   
@@ -296,31 +215,23 @@ simulate_arch1 <- function(n, theta) {
     stop("Invalid ARCH parameters.")}
   
   r_star <- numeric(n)
-  
   h_star <- numeric(n)
   
-  ##########################################################
   # Stationary initialization
-  ##########################################################
-  
+
   h_star[1] <- omega / (1 - alpha)
-  
   r_star[1] <- mu + sqrt(h_star[1]) * rnorm(1)
   
-  ##########################################################
   # Simulation
-  ##########################################################
-  
+
   for (t in 2:n) {
     h_star[t] <- omega + alpha * (r_star[t - 1] - mu)^2
     r_star[t] <- mu + sqrt(h_star[t]) * rnorm(1)
     }
   
-  list(returns = r_star, variance =h_star)}
+  list(returns = r_star, variance = h_star)}
 
-############################################################
 # Positive definite covariance regularization
-############################################################
 
 make_positive_definite <- function(Sigma, min_eigenvalue = 1e-12) {
   
@@ -335,9 +246,7 @@ make_positive_definite <- function(Sigma, min_eigenvalue = 1e-12) {
   (Sigma_pd + t(Sigma_pd)) /2
 }
 
-############################################################
 # Weighted covariance
-############################################################
 
 weighted_covariance <- function(draws, weights) {
   
@@ -352,27 +261,19 @@ weighted_covariance <- function(draws, weights) {
   covariance / (1 - sum(weights^2))
   }
 
-############################################################
 # Parametric Bootstrap Importance Sampling
-############################################################
 
 bootstrap_is <- function(B_boot = 3000, B_is = 10000, proposal_inflation = 1.25) {
   start_time <- proc.time()[3]
   
-  ##########################################################
-  # Step 1:
   # ERM under misspecified ARCH working model
-  ##########################################################
-  
+
   observed_fit <- fit_arch_erm(r_data = r)
   
   theta_hat <- observed_fit$par
   
-  ##########################################################
-  # Step 2:
   # Parametric bootstrap distribution of the ARCH ERM
-  ##########################################################
-  
+
   bootstrap_estimators <- matrix(NA_real_, nrow = B_boot, ncol = 3)
   
   colnames(bootstrap_estimators) <- c("mu", "omega", "alpha")
@@ -384,16 +285,12 @@ bootstrap_is <- function(B_boot = 3000, B_is = 10000, proposal_inflation = 1.25)
     
     attempts <- attempts + 1
     
-    ########################################################
     # Generate bootstrap data from fitted ARCH model
-    ########################################################
-    
+
     simulated_data <- simulate_arch1(n = n, theta = theta_hat)
     
-    ########################################################
     # Refit ARCH model
-    ########################################################
-    
+
     fit_star <- try(fit_arch_erm(r_data = simulated_data$returns, 
                                  start = theta_hat), silent = TRUE)
     
@@ -410,48 +307,33 @@ bootstrap_is <- function(B_boot = 3000, B_is = 10000, proposal_inflation = 1.25)
   
   bootstrap_estimators <- bootstrap_estimators[seq_len(successful), ,drop = FALSE]
   
-  ##########################################################
-  # Step 3:
   # Fit multivariate Gaussian proposal
-  #
-  # q(theta) =
-  # N(theta ; mean_boot, Sigma_boot)
-  ##########################################################
-  
+  # q(theta) = N(theta ; mean_boot, Sigma_boot)
+
   proposal_mean <-colMeans(bootstrap_estimators)
   proposal_covariance <- cov(bootstrap_estimators)
   proposal_covariance <- make_positive_definite(proposal_covariance)
   
   proposal_covariance <- proposal_inflation^2 * proposal_covariance
   
-  ##########################################################
-  # Step 4:
   # Draw importance samples from fitted proposal
-  ##########################################################
-  
+
   proposal_draws <- mnormt::rmnorm(n = B_is, mean = proposal_mean, 
                                    varcov = proposal_covariance)
   
   colnames(proposal_draws) <- c("mu", "omega", "alpha")
   
-  ##########################################################
-  # Step 5:
   # Evaluate posterior target
-  ##########################################################
-  
+
   log_target_values <- apply(proposal_draws, MARGIN = 1, FUN = log_target)
   
-  ##########################################################
   # Proposal density
-  ##########################################################
-  
+
   log_proposal_values <- mnormt::dmnorm(x = proposal_draws, mean = proposal_mean, 
                                         varcov = proposal_covariance, log = TRUE)
   
-  ##########################################################
   # Importance weights
-  ##########################################################
-  
+
   log_weights <- log_target_values - log_proposal_values
   
   finite_weights <- is.finite(log_weights)
@@ -460,24 +342,18 @@ bootstrap_is <- function(B_boot = 3000, B_is = 10000, proposal_inflation = 1.25)
   
   log_weights[!finite_weights] <- -Inf
   
-  ##########################################################
   # Numerically stable normalization
-  ##########################################################
-  
+
   max_log_weight <- max(log_weights)
   raw_weights <- exp(log_weights - max_log_weight)
   weights <- raw_weights / sum(raw_weights)
   
-  ##########################################################
   # Importance sampling ESS
-  ##########################################################
-  
+
   ess <- 1 /sum(weights^2)
   
-  ##########################################################
   # Weighted posterior moments
-  ##########################################################
-  
+
   post_mean <- colSums(proposal_draws * weights)
   
   post_covariance <- weighted_covariance(draws = proposal_draws, weights = weights)
@@ -485,10 +361,8 @@ bootstrap_is <- function(B_boot = 3000, B_is = 10000, proposal_inflation = 1.25)
   post_summary <- data.frame(parameter = colnames(proposal_draws), mean = post_mean, 
                              sd = sqrt(diag(post_covariance)), row.names = NULL)
   
-  ##########################################################
   # Fraction of proposal draws satisfying ARCH constraints
-  ##########################################################
-  
+
   valid_proposal <- proposal_draws[, "omega"] > 0 & 
     proposal_draws[, "alpha"] > 0 & 
     proposal_draws[, "alpha"] < 1
@@ -516,26 +390,20 @@ bootstrap_is <- function(B_boot = 3000, B_is = 10000, proposal_inflation = 1.25)
        attempted_bootstraps = attempts)
   }
 
-############################################################
-# Random Walk Metropolis Hastings
-############################################################
+# Random Walk Metropolis Hastings ####
 
 rwmh <- function(n_iter = 40000, burnin = 10000) {
   start_time <- proc.time()[3]
   p <- 3
   
-  ##########################################################
   # ARCH ERM as starting value
-  ##########################################################
-  
+
   start_fit <-fit_arch_erm(r_data = r)
   
   start_theta <- start_fit$par
   
-  ##########################################################
   # Negative log posterior
-  ##########################################################
-  
+
   negative_log_target <- function(theta) {value <- log_target(theta)
       
       if (!is.finite(value)) {return(1e100)}
@@ -544,10 +412,8 @@ rwmh <- function(n_iter = 40000, burnin = 10000) {
   }
   
   
-  ##########################################################
   # Posterior mode using direct constraints
-  ##########################################################
-  
+
   mode_fit <- optim(par = start_theta, fn = negative_log_target, method = "L-BFGS-B", 
                     lower = c(-Inf, 1e-10, e-5), upper = c(Inf, Inf, 1 - 1e-5), 
                     control = list(maxit = 2000))
@@ -556,18 +422,14 @@ rwmh <- function(n_iter = 40000, burnin = 10000) {
   
   names(posterior_mode) <- c("mu", "omega", "alpha")
   
-  ##########################################################
   # Numerical Hessian around posterior mode
-  ##########################################################
-  
+
   Hessian <- optimHess(par = posterior_mode, fn = negative_log_target)
   
   Hessian <- (Hessian + t(Hessian)) /2
   
-  ##########################################################
   # Ensure positive definite Hessian
-  ##########################################################
-  
+
   eig <- eigen(Hessian,symmetric = TRUE)
   
   eig$values <- pmax(eig$values, 1e-8)
@@ -576,20 +438,16 @@ rwmh <- function(n_iter = 40000, burnin = 10000) {
   
   local_covariance <- solve(Hessian_pd)
   
-  ##########################################################
   # Random walk proposal covariance
-  ##########################################################
-  
+
   proposal_scale <- 2.38^2 / p
   
   proposal_covariance <- proposal_scale * local_covariance
   
   proposal_covariance <- make_positive_definite(proposal_covariance)
   
-  ##########################################################
   # MCMC storage
-  ##########################################################
-  
+
   draws <- matrix(NA_real_, nrow = n_iter, ncol = p)
   
   colnames(draws) <- c("mu", "omega", "alpha")
@@ -600,9 +458,8 @@ rwmh <- function(n_iter = 40000, burnin = 10000) {
   
   accepted <-0
   
-  ##########################################################
   # MCMC
-  ##########################################################
+
   
   for (i in seq_len(n_iter)) {
     
@@ -612,11 +469,9 @@ rwmh <- function(n_iter = 40000, burnin = 10000) {
     
     proposed_log_target <- log_target(proposed_theta)
     
-    ########################################################
     # Invalid omega or alpha automatically give
     # proposed_log_target = -Inf
-    ########################################################
-    
+
     if (is.finite(proposed_log_target)) {
       log_acceptance_ratio <- proposed_log_target - current_log_target
       if (log(runif(1)) < min(0,log_acceptance_ratio)) {
@@ -628,29 +483,17 @@ rwmh <- function(n_iter = 40000, burnin = 10000) {
     draws[i, ] <-current_theta
     }
   
-  
-  ##########################################################
   # Remove burnin
-  ##########################################################
   
-  draws_keep <-
-    draws[
-      (burnin + 1):n_iter,
-      ,
-      drop = FALSE
-    ]
+  draws_keep <- draws[(burnin + 1):n_iter,, drop = FALSE]
   
-  ##########################################################
   # ESS
-  ##########################################################
-  
+
   ess_parameter <- apply(draws_keep, MARGIN = 2, FUN = LaplacesDemon::ESS)
   
   overall_ess <- min(ess_parameter)
   
-  ##########################################################
   # Posterior summary
-  ##########################################################
   
   post_summary <- data.frame(parameter = colnames(draws_keep), 
                              mean = colMeans(draws_keep), 
@@ -671,10 +514,7 @@ rwmh <- function(n_iter = 40000, burnin = 10000) {
        ess_per_second = overall_ess / elapsed_time)
 }
 
-
-############################################################
-# Run PBIS
-############################################################
+# Run PBIS ####
 
 set.seed(456)
 
@@ -685,18 +525,13 @@ bootstrap_result <-
     proposal_inflation = 1.25
   )
 
-
-############################################################
-# Run RWMH
-############################################################
+# Run RWMH ####
 
 set.seed(789)
 
 mcmc_result <- rwmh(n_iter = 40000, burnin = 10000)
 
-############################################################
-# Computational cost comparison
-############################################################
+# Computational cost comparison ####
 
 cost_table <- data.frame(method = c(bootstrap_result$method, mcmc_result$method), 
                          elapsed_seconds = c(bootstrap_result$elapsed, mcmc_result$elapsed), 
@@ -711,9 +546,7 @@ comparison_metrics <- data.frame(
             bootstrap_result$ess_per_second - mcmc_result$ess_per_second, 
             bootstrap_result$ess_per_second / mcmc_result$ess_per_second))
 
-############################################################
-# Posterior comparison
-############################################################
+# Posterior comparison ####
 
 post_comparison <- data.frame(parameter = c("mu", "omega", "alpha"),
                               bootstrap_mean = bootstrap_result$summary$mean,
@@ -722,9 +555,7 @@ post_comparison <- data.frame(parameter = c("mu", "omega", "alpha"),
                               bootstrap_sd = bootstrap_result$summary$sd, 
                               mcmc_sd = mcmc_result$summary$sd)
 
-############################################################
-# Importance sampling diagnostics
-############################################################
+# Importance sampling diagnostics ####
 
 weight_diagnostics <-data.frame(ESS = bootstrap_result$ess, 
                                 relative_ESS = bootstrap_result$relative_ess, 
@@ -733,23 +564,17 @@ weight_diagnostics <-data.frame(ESS = bootstrap_result$ess,
                                 successful_bootstraps = bootstrap_result$successful_bootstraps, 
                                 attempted_bootstraps = bootstrap_result$attempted_bootstraps)
 
-############################################################
 # Plot simulated returns
-############################################################
 
 plot(r, type = "l", xlab = "Time", ylab = "Return", 
      main = "Returns generated from GARCH(1,1)")
 
-############################################################
-# Plot true GARCH conditional variance
-############################################################
+# Plot true GARCH conditional variance ####
 
 plot(h_true, type = "l", xlab = "Time", ylab = expression(h[t]), 
      main = "True GARCH(1,1) conditional variance")
 
-############################################################
-# Posterior density comparison
-############################################################
+# Posterior density comparison ####
 
 old_par <- par(no.readonly = TRUE)
 
@@ -759,48 +584,36 @@ parameter_labels <- expression(mu, omega, alpha)
 
 for (j in seq_len(3)) {
   
-  ##########################################################
   # PBIS draws and weights
-  ##########################################################
-  
+
   bootstrap_draws_j <- bootstrap_result$draws[, j]
   
-  ##########################################################
   # Remove invalid proposal draws before KDE
-  ##########################################################
-  
+
   valid <- is.finite(bootstrap_draws_j) & bootstrap_result$weights > 0
   
   bootstrap_draws_j <- bootstrap_draws_j[valid]
   bootstrap_weights_j <- bootstrap_result$weights[valid]
   bootstrap_weights_j <- bootstrap_weights_j /sum(bootstrap_weights_j)
   
-  ##########################################################
   # MCMC draws
-  ##########################################################
-  
+
   mcmc_draws_j <- mcmc_result$draws[, j]
   
-  ##########################################################
   # Common range
-  ##########################################################
-  
+
   plot_range <- range(bootstrap_draws_j, mcmc_draws_j,finite = TRUE)
 
-  ##########################################################
   # Weighted PBIS posterior density
-  ##########################################################
-  
+
   bootstrap_density <- density(x =bootstrap_draws_j, 
                                weights =bootstrap_weights_j,
                                n = 500,
                                from = plot_range[1], 
                                to = plot_range[2])
   
-  ##########################################################
   # RWMH posterior density
-  ##########################################################
-  
+
   mcmc_density <- density(x = mcmc_draws_j, 
                           n = 500, 
                           from = plot_range[1], 
@@ -808,10 +621,8 @@ for (j in seq_len(3)) {
   
   y_limit <- c(0, 1.05 * max(bootstrap_density$y,mcmc_density$y, na.rm = TRUE))
   
-  ##########################################################
   # Plot
-  ##########################################################
-  
+
   plot(x = bootstrap_density$x, 
        y = bootstrap_density$y, 
        type = "l", 
@@ -824,11 +635,8 @@ for (j in seq_len(3)) {
   
   lines(x = mcmc_density$x, y = mcmc_density$y, lwd = 2, col = "red", lty = 2)
   
-  
-  ##########################################################
   # Only mu has a directly comparable true value
-  ##########################################################
-  
+
   if (j == 1) {abline(v = mu_true, col = "black", lwd = 2, lty =3)
     
     legend("topright", 
@@ -851,9 +659,7 @@ for (j in seq_len(3)) {
 
 par(old_par)
 
-############################################################
 # Conditional variance at posterior means
-############################################################
 
 pbis_mean <-setNames(bootstrap_result$summary$mean, bootstrap_result$summary$parameter)
 
@@ -863,9 +669,7 @@ h_arch_pbis <- arch_variance(theta =pbis_mean, r_data =r)
 
 h_arch_mcmc <-arch_variance(theta = mcmc_mean, r_data = r)
 
-############################################################
 # Compare true GARCH variance and fitted ARCH variance
-############################################################
 
 plot(h_true, type = "l", lwd = 2, xlab = "Time", ylab = expression(h[t]),
      main = "True GARCH variance versus fitted ARCH variance")
@@ -884,9 +688,7 @@ legend("topright",
        lty = c(1, 2, 3), 
        bty ="n")
 
-############################################################
-# Output
-############################################################
+# Output ####
 
 cat("\nTrue GARCH(1,1) DGP parameters:\n")
 
