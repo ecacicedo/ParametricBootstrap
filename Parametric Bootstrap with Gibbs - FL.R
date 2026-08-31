@@ -48,14 +48,13 @@ prior_sd <- 5
 ############################################################
 
 #Check if really needed
-#clip_prob <- function(probability, epsilon = 1e-10) {
-#  pmin(pmax(probability, epsilon),1 - epsilon)
-#}
+clip_prob <- function(probability, epsilon = 1e-10) {
+  pmin(pmax(probability, epsilon),1 - epsilon)
+}
 
 focal_loss_vector <- function(beta,X_data,y_data) {
   
-  #prob_one <- clip_prob(plogis(as.vector(X_data %*% beta)))
-  prob_one <- plogis(as.vector(X_data%*%beta))
+  prob_one <- clip_prob(plogis(as.vector(X_data %*% beta)))
   
   prob_true_class <- ifelse(y_data == 1,prob_one,1 - prob_one)
   
@@ -74,8 +73,7 @@ focal_loss_total <- function(beta,X_data,y_data) {
 
 focal_grad <- function(beta,X_data,y_data) {
   
-  #prob_one <- clip_prob(plogis(as.vector(X_data%*%beta)))
-  prob_one <- plogis(as.vector(X_data%*%beta))
+  prob_one <- clip_prob(plogis(as.vector(X_data%*%beta)))
   
   derivative_xbeta <- numeric(length(y_data))
   
@@ -140,7 +138,7 @@ logit_estimate <- function(X_data,y_data) {
 
 fit_focal_classifier <- function(X_data,y_data,start) {
   
-  fit <- optim(par = start, fn = focal_loss_total, gr = focal_gradient,
+  fit <- optim(par = start, fn = focal_loss_total, gr = focal_grad,
     X_data = X_data, y_data = y_data, method = "BFGS",
     control = list(maxit = 1000, reltol = 1e-10)
   )
@@ -411,26 +409,26 @@ bootstrap_is <- function(
 # 11. Positive definite matrix correction
 ############################################################
 
-make_positive_definite <- function(
-    matrix_value,
-    minimum_eigenvalue = 1e-8
-) {
+#make_positive_definite <- function(
+#    matrix_value,
+#    minimum_eigenvalue = 1e-8
+#) {
   
-  symmetric_matrix <- (
-    matrix_value +
-      t(matrix_value)
-  ) / 2
+#  symmetric_matrix <- (
+#    matrix_value +
+#      t(matrix_value)
+#  ) / 2
   
-  decomposition <- eigen(
-    symmetric_matrix,
-    symmetric = TRUE
-  )
+#  decomposition <- eigen(
+#    symmetric_matrix,
+#    symmetric = TRUE
+#  )
   
-  adjusted_values <- pmax(decomposition$values,minimum_eigenvalue)
+#  adjusted_values <- pmax(decomposition$values,minimum_eigenvalue)
   
-  decomposition$vectors%*%diag(adjusted_values,nrow = length(adjusted_values))
-  %*%t(decomposition$vectors)
-}
+#  decomposition$vectors %*% diag(adjusted_values,nrow = length(adjusted_values))
+#  %*% t(decomposition$vectors)
+#}
 
 ############################################################
 # Random Walk Metropolis Hastings
@@ -447,7 +445,7 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
   posterior_mode_fit <- optim(
     par = beta_hat,
     fn = neg_log_target,
-    gr = neg_log_target_gradient,
+    gr = neg_log_target_grad,
     method = "BFGS",
     control = list(
       maxit = 1000,
@@ -460,9 +458,9 @@ rwmh <- function(n_iter = 30000, burnin = 5000) {
   posterior_hessian <- optimHess(
     par = posterior_mode,
     fn = neg_log_target,
-    gr = neg_log_target_gradient)
+    gr = neg_log_target_grad)
   
-  posterior_hessian <-make_positive_definite(posterior_hessian)
+  #posterior_hessian <-make_positive_definite(posterior_hessian)
   
   local_covariance <- solve(posterior_hessian)
   
