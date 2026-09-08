@@ -117,31 +117,154 @@ arch_loss <- function(theta, r_data) {
 }
 
 # ARCH empirical risk minimizer ####
+############################################################
+# Parameter transformations
+#
+# Original:
+# theta = (mu, omega, alpha)
+#
+# Transformed:
+# psi = (mu, log(omega), logit(alpha))
+############################################################
 
-fit_arch_erm <- function(r_data, start = NULL) {
+theta_to_psi <- function(theta) {
+  
+  mu <- theta[1]
+  omega <- theta[2]
+  alpha <- theta[3]
+  
+  if (
+    !is.finite(mu) ||
+    !is.finite(omega) ||
+    !is.finite(alpha) ||
+    omega <= 0 ||
+    alpha <= 0 ||
+    alpha >= 1
+  ) {
+    stop("Invalid theta in theta_to_psi().")
+  }
+  
+  psi <- c(
+    mu = mu,
+    log_omega = log(omega),
+    logit_alpha = qlogis(alpha)
+  )
+  
+  psi
+}
+
+psi_to_theta <- function(psi) {
+  
+  mu <- psi[1]
+  omega <- exp(psi[2])
+  alpha <- plogis(psi[3])
+  
+  theta <- c(
+    mu = mu,
+    omega = omega,
+    alpha = alpha
+  )
+  
+  theta
+}
+
+arch_loss_transformed <- function(
+    psi,
+    r_data
+) {
+  
+  theta <- psi_to_theta(psi)
+  
+  arch_loss(
+    theta = theta,
+    r_data = r_data
+  )
+}
+
+fit_arch_erm <- function(
+    r_data,
+    start = NULL
+) {
   
   sample_variance <- var(r_data)
   
+  ##########################################################
+  # Starting values on original theta scale
+  ##########################################################
+  
   if (is.null(start)) {
-    start <- c(mu = mean(r_data), 
-               omega = max(0.5 * sample_variance, 1e-8), alpha = 0.20)
-    }
+    
+    start <- c(
+      mu = mean(r_data),
+      omega = max(
+        0.5 * sample_variance,
+        1e-8
+      ),
+      alpha = 0.20
+    )
+  }
   
-  # Make sure starting values satisfy constraints
+  ##########################################################
+  # Ensure valid starting values
+  ##########################################################
   
-  start[2] <- max(start[2], 1e-10)
+  start[2] <- max(
+    start[2],
+    1e-10
+  )
   
-  start[3] <- min(max(start[3], 1e-5), 1 - 1e-5)
+  start[3] <- min(
+    max(start[3], 1e-6),
+    1 - 1e-6
+  )
   
-  # Bounded optimization
+  names(start) <- c(
+    "mu",
+    "omega",
+    "alpha"
+  )
   
-  fit <- optim(par = start, fn = arch_loss, r_data = r_data,
-      method = "L-BFGS-B", lower = c(-Inf, 1e-10, 1e-5),
-      upper = c(Inf, Inf, 1 - 1e-5), control = list(maxit = 2000 ))
+  ##########################################################
+  # Transform starting values
+  ##########################################################
   
-  names(fit$par) <- c("mu", "omega", "alpha")
+  psi_start <- theta_to_psi(start)
   
-  list(par = fit$par, loss = fit$value, convergence = fit$convergence)}
+  ##########################################################
+  # Unconstrained optimization
+  ##########################################################
+  
+  fit <- optim(
+    par = psi_start,
+    fn = arch_loss_transformed,
+    r_data = r_data,
+    method = "BFGS",
+    control = list(
+      maxit = 2000,
+      reltol = 1e-10
+    )
+  )
+  
+  ##########################################################
+  # Transform estimate back to theta scale
+  ##########################################################
+  
+  theta_hat <- psi_to_theta(
+    fit$par
+  )
+  
+  ##########################################################
+  # Return both parameterizations
+  ##########################################################
+  
+  list(
+    par = theta_hat,
+    par_transformed = fit$par,
+    loss = fit$value,
+    convergence = fit$convergence,
+    message = fit$message
+  )
+}
 
 # Fit working ARCH(1) ####
 
@@ -177,7 +300,7 @@ log_prior <- function(theta) {
   dnorm(mu, mean = 0, sd = prior_mu_sd, log = TRUE) + 
     dlnorm(omega, meanlog = prior_logomega_mean, 
            sdlog = prior_logomega_sd, log = TRUE) +
-    dbeta(alpha,mshape1 = prior_alpha_a, shape2 = prior_alpha_b, log = TRUE)
+    dbeta(alpha, shape1 = prior_alpha_a, shape2 = prior_alpha_b, log = TRUE)
 }
 
 # Generalized Bayesian learning rate ####
@@ -295,8 +418,7 @@ bootstrap_is <- function(B_boot = 3000, B_is = 10000, proposal_inflation = 1.25)
                                  start = theta_hat), silent = TRUE)
     
     if (!inherits(fit_star, "try-error") && fit_star$convergence == 0 &&
-        all(is.finite(fit_star$par)) && fit_star$par[2] > 0 && 
-        fit_star$par[3] > 0 && fit_star$par[3] < 1) {
+        fit_star$convergence == 0 && all(is.finite(fit_star$par))) {
       
       successful <- successful + 1
       
@@ -392,138 +514,280 @@ bootstrap_is <- function(B_boot = 3000, B_is = 10000, proposal_inflation = 1.25)
 
 # Random Walk Metropolis Hastings ####
 
-rwmh <- function(n_iter = 40000, burnin = 10000) {
+############################################################
+# Negative log posterior in transformed coordinates
+############################################################
+
+negative_log_target_transformed <- function(
+    psi
+) {
+  
+  theta <- psi_to_theta(psi)
+  
+  value <- log_target(theta)
+  
+  if (!is.finite(value)) {
+    return(1e100)
+  }
+  
+  -value
+}
+
+rwmh <- function(
+    n_iter = 40000,
+    burnin = 10000
+) {
+  
   start_time <- proc.time()[3]
+  
   p <- 3
   
-  # ARCH ERM as starting value
-
-  start_fit <-fit_arch_erm(r_data = r)
+  ##########################################################
+  # ARCH ERM
+  ##########################################################
+  
+  start_fit <- fit_arch_erm(
+    r_data = r
+  )
+  
+  if (start_fit$convergence != 0) {
+    stop("Initial ARCH fit did not converge.")
+  }
   
   start_theta <- start_fit$par
   
-  # Negative log posterior
-
-  negative_log_target <- function(theta) {value <- log_target(theta)
-      
-      if (!is.finite(value)) {return(1e100)}
-
-      - value
-  }
+  ##########################################################
+  # Posterior mode in transformed coordinates
+  ##########################################################
   
+  start_psi <- theta_to_psi(
+    start_theta
+  )
   
-  # Posterior mode using direct constraints
-
-  mode_fit <- optim(par = start_theta, fn = negative_log_target, method = "L-BFGS-B", 
-                    lower = c(-Inf, 1e-10, e-5), upper = c(Inf, Inf, 1 - 1e-5), 
-                    control = list(maxit = 2000))
+  mode_fit <- optim(
+    par = start_psi,
+    fn = negative_log_target_transformed,
+    method = "BFGS",
+    control = list(
+      maxit = 2000,
+      reltol = 1e-10
+    )
+  )
   
-  posterior_mode <- mode_fit$par
+  posterior_mode <- psi_to_theta(
+    mode_fit$par
+  )
   
-  names(posterior_mode) <- c("mu", "omega", "alpha")
+  ##########################################################
+  # Hessian in transformed coordinates
+  ##########################################################
   
-  # Numerical Hessian around posterior mode
-
-  Hessian <- optimHess(par = posterior_mode, fn = negative_log_target)
+  Hessian_psi <- optimHess(
+    par = mode_fit$par,
+    fn = negative_log_target_transformed
+  )
   
-  Hessian <- (Hessian + t(Hessian)) /2
+  Hessian_psi <- (
+    Hessian_psi +
+      t(Hessian_psi)
+  ) / 2
   
-  # Ensure positive definite Hessian
-
-  eig <- eigen(Hessian,symmetric = TRUE)
+  eig <- eigen(
+    Hessian_psi,
+    symmetric = TRUE
+  )
   
-  eig$values <- pmax(eig$values, 1e-8)
+  eig$values <- pmax(
+    eig$values,
+    1e-8
+  )
   
-  Hessian_pd <- eig$vectors %*% diag(eig$values) %*% t(eig$vectors)
+  Hessian_psi_pd <-
+    eig$vectors %*%
+    diag(eig$values) %*%
+    t(eig$vectors)
   
-  local_covariance <- solve(Hessian_pd)
+  local_covariance_psi <- solve(
+    Hessian_psi_pd
+  )
   
-  # Random walk proposal covariance
-
+  ##########################################################
+  # Transform covariance back to theta coordinates
+  ##########################################################
+  
+  Jacobian <- diag(
+    c(
+      1,
+      posterior_mode["omega"],
+      posterior_mode["alpha"] *
+        (1 - posterior_mode["alpha"])
+    )
+  )
+  
+  local_covariance <-
+    Jacobian %*%
+    local_covariance_psi %*%
+    t(Jacobian)
+  
+  local_covariance <-
+    make_positive_definite(
+      local_covariance
+    )
+  
+  ##########################################################
+  # Random walk proposal
+  ##########################################################
+  
   proposal_scale <- 2.38^2 / p
   
-  proposal_covariance <- proposal_scale * local_covariance
+  proposal_covariance <-
+    proposal_scale *
+    local_covariance
   
-  proposal_covariance <- make_positive_definite(proposal_covariance)
+  proposal_covariance <-
+    make_positive_definite(
+      proposal_covariance
+    )
   
-  # MCMC storage
-
-  draws <- matrix(NA_real_, nrow = n_iter, ncol = p)
+  ##########################################################
+  # MCMC
+  ##########################################################
   
-  colnames(draws) <- c("mu", "omega", "alpha")
+  draws <- matrix(
+    NA_real_,
+    nrow = n_iter,
+    ncol = p
+  )
+  
+  colnames(draws) <- c(
+    "mu",
+    "omega",
+    "alpha"
+  )
   
   current_theta <- posterior_mode
   
-  current_log_target <- log_target(current_theta)
+  current_log_target <- log_target(
+    current_theta
+  )
   
-  accepted <-0
-  
-  # MCMC
-
+  accepted <- 0
   
   for (i in seq_len(n_iter)) {
     
-    proposed_theta <-
-      as.vector(mnormt::rmnorm(n = 1, mean = current_theta, 
-                               varcov = proposal_covariance))
+    proposed_theta <- as.vector(
+      mnormt::rmnorm(
+        n = 1,
+        mean = current_theta,
+        varcov = proposal_covariance
+      )
+    )
     
-    proposed_log_target <- log_target(proposed_theta)
+    proposed_log_target <- log_target(
+      proposed_theta
+    )
     
-    # Invalid omega or alpha automatically give
-    # proposed_log_target = -Inf
-
     if (is.finite(proposed_log_target)) {
-      log_acceptance_ratio <- proposed_log_target - current_log_target
-      if (log(runif(1)) < min(0,log_acceptance_ratio)) {
+      
+      log_acceptance_ratio <-
+        proposed_log_target -
+        current_log_target
+      
+      if (
+        log(runif(1)) <
+        min(0, log_acceptance_ratio)
+      ) {
+        
         current_theta <- proposed_theta
-        current_log_target <- proposed_log_target
-        accepted <- accepted + 1}
+        
+        current_log_target <-
+          proposed_log_target
+        
+        accepted <- accepted + 1
       }
-    
-    draws[i, ] <-current_theta
     }
+    
+    draws[i, ] <- current_theta
+  }
   
+  ##########################################################
   # Remove burnin
+  ##########################################################
   
-  draws_keep <- draws[(burnin + 1):n_iter,, drop = FALSE]
+  draws_keep <- draws[
+    (burnin + 1):n_iter,
+    ,
+    drop = FALSE
+  ]
   
+  ##########################################################
   # ESS
-
-  ess_parameter <- apply(draws_keep, MARGIN = 2, FUN = LaplacesDemon::ESS)
+  ##########################################################
   
-  overall_ess <- min(ess_parameter)
+  ess_parameter <- apply(
+    draws_keep,
+    MARGIN = 2,
+    FUN = LaplacesDemon::ESS
+  )
   
+  overall_ess <- min(
+    ess_parameter
+  )
+  
+  ##########################################################
   # Posterior summary
+  ##########################################################
   
-  post_summary <- data.frame(parameter = colnames(draws_keep), 
-                             mean = colMeans(draws_keep), 
-                             sd = apply(draws_keep, 2, sd), 
-                             ess = ess_parameter, row.names = NULL)
+  post_summary <- data.frame(
+    parameter = colnames(draws_keep),
+    mean = colMeans(draws_keep),
+    sd = apply(draws_keep, 2, sd),
+    ess = ess_parameter,
+    row.names = NULL
+  )
   
-  elapsed_time <- proc.time()[3] - start_time
+  elapsed_time <-
+    proc.time()[3] -
+    start_time
   
-  list(method = "Random walk Metropolis Hastings",
-       draws = draws_keep, 
-       summary = post_summary, 
-       posterior_mode = posterior_mode, 
-       proposal_covariance = proposal_covariance, 
-       ess_parameter = ess_parameter,
-       ess = overall_ess,
-       acceptance_rate = accepted / n_iter,
-       elapsed = elapsed_time,
-       ess_per_second = overall_ess / elapsed_time)
+  list(
+    method =
+      "Random walk Metropolis Hastings",
+    draws =
+      draws_keep,
+    summary =
+      post_summary,
+    posterior_mode =
+      posterior_mode,
+    local_covariance =
+      local_covariance,
+    proposal_covariance =
+      proposal_covariance,
+    ess_parameter =
+      ess_parameter,
+    ess =
+      overall_ess,
+    acceptance_rate =
+      accepted / n_iter,
+    elapsed =
+      elapsed_time,
+    ess_per_second =
+      overall_ess / elapsed_time
+  )
 }
 
 # Run PBIS ####
 
 set.seed(456)
 
-bootstrap_result <-
-  bootstrap_is(
-    B_boot = 3000,
-    B_is = 10000,
-    proposal_inflation = 1.25
-  )
+test_result <- bootstrap_is(
+  B_boot = 3000,
+  B_is = 1000,
+  proposal_inflation = 1.25
+)
+
+test_result$successful_bootstraps
+test_result$attempted_bootstraps
 
 # Run RWMH ####
 
