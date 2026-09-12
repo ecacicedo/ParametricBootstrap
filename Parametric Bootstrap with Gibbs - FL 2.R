@@ -23,7 +23,8 @@ X <- cbind(intercept = 1, x1 = x1, x2 = x2)
 beta_true <- c(intercept = -3.0, x1 = 1.25, x2 = 0.75)
 
 # use 'plogis' function to calculate exp(x)/(1 + exp(x))
-true_prob <- plogis(as.vector(X%*%beta_true)) 
+# true_prob <- plogis(as.vector(X%*%beta_true)) 
+true_prob <- exp(as.vector(X%*%beta_true))/(1+exp(as.vector(X%*%beta_true)))
 
 y <- rbinom(n = n, size = 1, prob = true_prob)
 
@@ -161,7 +162,8 @@ names(beta_hat) <- colnames(X)
 
 focal_pseudo_prob <- function(beta,X_data) {
   
-  score <- clip_prob(plogis(as.vector(X_data%*%beta)))
+  #score <- clip_prob(plogis(as.vector(X_data%*%beta)))
+  score <- exp(as.vector(X%*%beta_true))/(1+exp(as.vector(X%*%beta_true)))
   
   # Loss if the candidate label = 1
   loss_one <- -alpha_focal*(1 - score)^gamma_focal*log(score)
@@ -172,7 +174,8 @@ focal_pseudo_prob <- function(beta,X_data) {
   # log u_1 - log u_0
   log_kernel_ratio <- eta*(loss_zero - loss_one)
   
-  plogis(log_kernel_ratio)
+  #plogis(log_kernel_ratio)
+  exp(as.vector(log_kernel_ratio))/(1+exp(as.vector(log_kernel_ratio)))
 }
 
 p_hat_positive <- focal_pseudo_prob(beta = beta_hat,X_data = X)
